@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"os"
+	"taskforge/db/sqlc"
 	"taskforge/internal/handler"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -15,6 +21,15 @@ func main() {
 }
 
 func run() error {
+	godotenv.Load()
+
+	pool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil{
+		return err
+	}
+
+	queries := sqlc.New((pool))
+
 	handler := handler.NewHandler()
 	
 	s := http.Server{
