@@ -28,9 +28,9 @@ func run() error {
 		return err
 	}
 
-	queries := sqlc.New((pool))
+	repository := sqlc.New((pool))
 
-	handler := handler.NewHandler()
+	handler := handler.NewHandler(repository)
 	
 	s := http.Server{
 		ReadTimeout: 10 * time.Second,
