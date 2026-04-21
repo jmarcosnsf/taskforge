@@ -11,10 +11,11 @@ import (
 
 type Handler struct {
 	repo *sqlc.Queries
+	jwtSecret string
 }
 
-func NewHandler(repository *sqlc.Queries) http.Handler {
-	h := &Handler{repo: repository}
+func NewHandler(repository *sqlc.Queries, jwtSecret string) http.Handler {
+	h := &Handler{repo: repository, jwtSecret: jwtSecret}
 
 	r := chi.NewMux()
 
@@ -24,6 +25,7 @@ func NewHandler(repository *sqlc.Queries) http.Handler {
 
 	r.Get("/status", h.GetStatus)
 	r.Post("/register", h.CreateUser)
+	r.Post("/login", h.LoginUser)
 	
 	return r
 }

@@ -30,7 +30,7 @@ func run() error {
 
 	repository := sqlc.New((pool))
 
-	handler := handler.NewHandler(repository)
+	handler := handler.NewHandler(repository, os.Getenv("JWT_SECRET"))
 	
 	s := http.Server{
 		ReadTimeout: 10 * time.Second,
