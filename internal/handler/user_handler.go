@@ -24,6 +24,10 @@ func (h *Handler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		api.SendJSON(w, api.Response{Error: "invalid request body"}, http.StatusBadRequest)
 		return
 	}
+	if body.Name == "" || body.Email == "" || body.Password == "" {
+    api.SendJSON(w, api.Response{Error: "invalid request body (name,email and password required)"}, http.StatusBadRequest)
+    return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
 		slog.Error("failed to hash password", "error", err)
@@ -82,3 +86,4 @@ func (h *Handler) LoginUser (w http.ResponseWriter, r *http.Request) {
 
 	api.SendJSON(w, api.Response{Data: token}, http.StatusOK)
 }
+

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
+	customMiddleware "taskforge/internal/middleware"
 )
 
 type Handler struct {
@@ -26,6 +27,16 @@ func NewHandler(repository *sqlc.Queries, jwtSecret string) http.Handler {
 	r.Get("/status", h.GetStatus)
 	r.Post("/register", h.CreateUser)
 	r.Post("/login", h.LoginUser)
+
+	r.Route("/teams", func(r chi.Router){
+		r.Use(customMiddleware.AuthMiddleware(jwtSecret))
+		r.Post("/", h.CreateTeam)
+		r.Get("/" , h.GetTeamsByUser)
+		r.Get("/{id}", h.GetTeamByID)
+		r.Post("/{id}/members", h.AddTeamMember)
+		r.Delete("/{id}/members", h.RemoveTeamMember)
+		r.Get("/{id}/members", h.GetTeamMembers)
+	})
 	
 	return r
 }
