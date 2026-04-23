@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -28,9 +29,13 @@ func run() error {
 		return err
 	}
 
+	rdb := redis.NewClient(&redis.Options{
+    Addr: "localhost:6379",
+})
+
 	repository := sqlc.New((pool))
 
-	handler := handler.NewHandler(repository, os.Getenv("JWT_SECRET"))
+	handler := handler.NewHandler(repository, os.Getenv("JWT_SECRET"), rdb)
 	
 	s := http.Server{
 		ReadTimeout: 10 * time.Second,

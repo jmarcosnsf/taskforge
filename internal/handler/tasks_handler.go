@@ -2,13 +2,16 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"taskforge/db/sqlc"
 	"taskforge/internal/api"
+	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -62,6 +65,8 @@ func (h *Handler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.redisClient.Del(r.Context(), "tasks:"+teamID.String())
+
 	api.SendJSON(w, api.Response{Data: task}, http.StatusCreated)
 }
 
@@ -88,12 +93,24 @@ func (h *Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cacheKey := "tasks:" + teamID.String()
+	cached, err := h.redisClient.Get(r.Context(), cacheKey).Result()
+	if err == nil {
+		var tasks []sqlc.Task
+		json.Unmarshal([]byte(cached), &tasks)
+		api.SendJSON(w, api.Response{Data: tasks}, http.StatusOK)
+		return
+	}
+
 	tasks, err := h.repo.ListTasks(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true})
 	if err != nil {
 		slog.Error("failed to get tasks list", "error", err)
 		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
 		return
 	}
+
+	tasksJSON, _ := json.Marshal(tasks)
+	h.redisClient.Set(r.Context(), cacheKey, tasksJSON, 5*time.Minute)
 
 	api.SendJSON(w, api.Response{Data: tasks}, http.StatusOK)
 }
@@ -200,6 +217,7 @@ func (h *Handler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.redisClient.Del(r.Context(), "tasks:"+teamID.String())
 	api.SendJSON(w, api.Response{Data: "Task successfully updated"}, http.StatusOK)
 }
 
@@ -246,6 +264,10 @@ func (h *Handler) AssignTask(w http.ResponseWriter, r *http.Request) {
 
 	targetUser, err := h.repo.GetUserByEmail(r.Context(), body.Email)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			api.SendJSON(w, api.Response{Error: "user not found"}, http.StatusNotFound)
+			return
+		}
 		slog.Error("failed to get user ID", "error", err)
 		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
 		return
@@ -273,10 +295,11 @@ func (h *Handler) AssignTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api.SendJSON(w, api.Response{Data: "Task assigned successfully"}, http.StatusOK)
+	h.redisClient.Del(r.Context(), "tasks:"+teamID.String())
+	api.SendJSON(w, api.Response{Data: "task assigned successfully"}, http.StatusOK)
 }
 
-func (h *Handler) RemoveTask(w http.ResponseWriter, r *http.Request){
+func (h *Handler) RemoveTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskID")
 	parsed, err := uuid.Parse(taskID)
 	if err != nil {
@@ -306,11 +329,12 @@ func (h *Handler) RemoveTask(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	if err := h.repo.RemoveTask(r.Context(), pgtype.UUID{Bytes: parsed,Valid: true}); err != nil {
+	if err := h.repo.RemoveTask(r.Context(), pgtype.UUID{Bytes: parsed, Valid: true}); err != nil {
 		slog.Error("failed to remove task", "error", err)
 		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
 		return
 	}
 
-	api.SendJSON(w, api.Response{Data: "Task successfully removed"}, http.StatusOK)
+	h.redisClient.Del(r.Context(), "tasks:"+teamID.String())
+	api.SendJSON(w, api.Response{Data: "task successfully removed"}, http.StatusOK)
 }

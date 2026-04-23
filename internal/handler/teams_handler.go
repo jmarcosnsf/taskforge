@@ -8,6 +8,7 @@ import (
 	"strings"
 	"taskforge/db/sqlc"
 	"taskforge/internal/api"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -137,8 +138,12 @@ func (h *Handler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.repo.GetUserByEmail(r.Context(), body.Email)
 	if err != nil {
-		slog.Error("user dont exists", "error", err)
-		api.SendJSON(w, api.Response{Error: "email dont exists on db"}, http.StatusBadRequest)
+		if errors.Is(err, pgx.ErrNoRows) {
+			api.SendJSON(w, api.Response{Error: "user not found"}, http.StatusNotFound)
+			return
+		}
+		slog.Error("failed to get user", "error", err)
+		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
 		return
 	}
 
@@ -156,6 +161,8 @@ func (h *Handler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.redisClient.Del(r.Context(), "members:"+teamID.String())
+	
 	api.SendJSON(w, api.Response{Data: "member successfully added to team"}, http.StatusOK)
 }
 
@@ -199,8 +206,12 @@ func (h *Handler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.repo.GetUserByEmail(r.Context(), body.Email)
 	if err != nil {
-		slog.Error("user not found", "error", err)
-		api.SendJSON(w, api.Response{Error: "user not found"}, http.StatusBadRequest)
+		if errors.Is(err, pgx.ErrNoRows) {
+			api.SendJSON(w, api.Response{Error: "user not found"}, http.StatusNotFound)
+			return
+		}
+		slog.Error("failed to get user", "error", err)
+		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
 		return
 	}
 
@@ -219,6 +230,7 @@ func (h *Handler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.redisClient.Del(r.Context(), "members:"+teamID.String())
 	api.SendJSON(w, api.Response{Data: "member successfully removed"}, http.StatusOK)
 }
 
@@ -230,13 +242,6 @@ func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 
 	teamID, ok := parseUUIDParam(w, r)
 	if !ok {
-		return
-	}
-
-	members, err := h.repo.GetTeamMembers(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true})
-	if err != nil {
-		slog.Error("failed to get team members", "error", err)
-		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
 		return
 	}
 
@@ -252,9 +257,28 @@ func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cacheKey := "members:" + teamID.String()
+	cached, err := h.redisClient.Get(r.Context(), cacheKey).Result()
+	if err == nil {
+		var members []sqlc.User
+		json.Unmarshal([]byte(cached), &members)
+		api.SendJSON(w, api.Response{Data: members}, http.StatusOK)
+		return
+	}
+
+	members, err := h.repo.GetTeamMembers(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true})
+	if err != nil {
+		slog.Error("failed to get team members", "error", err)
+		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
+		return
+	}
+
 	for i := range members {
 		members[i].Password = ""
 	}
+
+	membersJSON, _ := json.Marshal(members)
+	h.redisClient.Set(r.Context(), cacheKey, membersJSON, 5*time.Minute)
 
 	api.SendJSON(w, api.Response{Data: members}, http.StatusOK)
 }

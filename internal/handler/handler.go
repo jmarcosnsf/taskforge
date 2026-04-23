@@ -5,18 +5,21 @@ import (
 	"taskforge/db/sqlc"
 	"taskforge/internal/api"
 
+	customMiddleware "taskforge/internal/middleware"
+
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	customMiddleware "taskforge/internal/middleware"
+	"github.com/redis/go-redis/v9"
 )
 
 type Handler struct {
-	repo *sqlc.Queries
-	jwtSecret string
+	repo        *sqlc.Queries
+	jwtSecret   string
+	redisClient *redis.Client
 }
 
-func NewHandler(repository *sqlc.Queries, jwtSecret string) http.Handler {
-	h := &Handler{repo: repository, jwtSecret: jwtSecret}
+func NewHandler(repository *sqlc.Queries, jwtSecret string, redisClient *redis.Client) http.Handler {
+	h := &Handler{repo: repository, jwtSecret: jwtSecret, redisClient: redisClient}
 
 	r := chi.NewMux()
 
@@ -38,7 +41,7 @@ func NewHandler(repository *sqlc.Queries, jwtSecret string) http.Handler {
 		r.Get("/{id}/members", h.GetTeamMembers)
 
 		r.Post("/{id}/tasks", h.CreateTask)
-		r.Get("/tasks", h.ListTasks)
+		r.Get("/{id}/tasks", h.ListTasks)
 		r.Get("/{id}/tasks/{taskID}", h.GetTaskByID)
 		r.Patch("/{id}/tasks/{taskID}/status", h.UpdateTaskStatus)
 		r.Patch("/{id}/tasks/{taskID}/assign", h.AssignTask)
