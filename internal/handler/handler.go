@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"taskforge/db/sqlc"
 	"taskforge/internal/api"
+	"time"
 
 	customMiddleware "taskforge/internal/middleware"
 
@@ -26,6 +27,7 @@ func NewHandler(repository *sqlc.Queries, jwtSecret string, redisClient *redis.C
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
+	r.Use(customMiddleware.RateLimiter(redisClient, 100, time.Minute))
 
 	r.Get("/status", h.GetStatus)
 	r.Post("/register", h.CreateUser)
