@@ -8,9 +8,7 @@ import (
 	"strings"
 	"taskforge/db/sqlc"
 	"taskforge/internal/api"
-	"taskforge/internal/middleware"
 
-	"github.com/go-chi/chi"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -34,9 +32,8 @@ func (h *Handler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := getUserIDFromContext(w, r.Context())
 	if !ok {
-		api.SendJSON(w, api.Response{Error: "unauthorized"}, http.StatusUnauthorized)
 		return
 	}
 
@@ -65,9 +62,8 @@ func (h *Handler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetTeamsByUser(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := getUserIDFromContext(w, r.Context())
 	if !ok {
-		api.SendJSON(w, api.Response{Error: "unauthorized"}, http.StatusUnauthorized)
 		return
 	}
 
@@ -82,14 +78,12 @@ func (h *Handler) GetTeamsByUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetTeamByID(w http.ResponseWriter, r *http.Request) {
-	teamID := chi.URLParam(r, "id")
-	parsed, err := uuid.Parse(teamID)
-	if err != nil {
-		api.SendJSON(w, api.Response{Error: "invalid team id"}, http.StatusBadRequest)
+	teamID, ok := parseUUIDParam(w, r)
+	if !ok {
 		return
 	}
 
-	team, err := h.repo.GetTeamByID(r.Context(), pgtype.UUID{Bytes: parsed, Valid: true})
+	team, err := h.repo.GetTeamByID(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			api.SendJSON(w, api.Response{Error: "team not found"}, http.StatusNotFound)
@@ -108,19 +102,17 @@ type AddTeamMemberRequest struct {
 }
 
 func (h *Handler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := getUserIDFromContext(w, r.Context())
 	if !ok {
-		api.SendJSON(w, api.Response{Error: "unauthorized"}, http.StatusUnauthorized)
 		return
 	}
 
-	teamID := chi.URLParam(r, "id")
-	parsed, err := uuid.Parse(teamID)
-	if err != nil {
-		api.SendJSON(w, api.Response{Error: "invalid team id"}, http.StatusBadRequest)
+	teamID, ok := parseUUIDParam(w, r)
+	if !ok {
 		return
 	}
-	team, err := h.repo.GetTeamByID(r.Context(), pgtype.UUID{Bytes: parsed, Valid: true})
+
+	team, err := h.repo.GetTeamByID(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			api.SendJSON(w, api.Response{Error: "team not found"}, http.StatusNotFound)
@@ -152,7 +144,7 @@ func (h *Handler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
 
 	err = h.repo.AddTeamMember(r.Context(), sqlc.AddTeamMemberParams{
 		UserID: user.ID,
-		TeamID: pgtype.UUID{Bytes: parsed, Valid: true},
+		TeamID: pgtype.UUID{Bytes: teamID, Valid: true},
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "23505") {
@@ -172,20 +164,17 @@ type RemoveTeamMemberRequest struct {
 }
 
 func (h *Handler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserID(r.Context())
+	userID, ok := getUserIDFromContext(w, r.Context())
 	if !ok {
-		api.SendJSON(w, api.Response{Error: "unauthorized"}, http.StatusUnauthorized)
 		return
 	}
 
-	teamID := chi.URLParam(r, "id")
-	parsed, err := uuid.Parse(teamID)
-	if err != nil {
-		api.SendJSON(w, api.Response{Error: "invalid team id"}, http.StatusBadRequest)
+	teamID, ok := parseUUIDParam(w, r)
+	if !ok {
 		return
 	}
 
-	team, err := h.repo.GetTeamByID(r.Context(), pgtype.UUID{Bytes: parsed, Valid: true})
+	team, err := h.repo.GetTeamByID(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			api.SendJSON(w, api.Response{Error: "team not found"}, http.StatusNotFound)
@@ -233,34 +222,29 @@ func (h *Handler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 	api.SendJSON(w, api.Response{Data: "member successfully removed"}, http.StatusOK)
 }
 
-func (h *Handler) GetTeamMembers (w http.ResponseWriter, r *http.Request){
-	userID, ok := middleware.GetUserID(r.Context())
-	if !ok{
-		api.SendJSON(w, api.Response{Error: "unauthorized"}, http.StatusUnauthorized)
+func (h *Handler) GetTeamMembers(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserIDFromContext(w, r.Context())
+	if !ok {
 		return
 	}
 
-	teamID := chi.URLParam(r, "id")
-	parsed, err := uuid.Parse(teamID)
+	teamID, ok := parseUUIDParam(w, r)
+	if !ok {
+		return
+	}
+
+	members, err := h.repo.GetTeamMembers(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true})
 	if err != nil {
-		api.SendJSON(w, api.Response{Error: "invalid team id"}, http.StatusBadRequest)
-		return
-	}
-
-	members, err :=h.repo.GetTeamMembers(r.Context(), pgtype.UUID{Bytes: parsed, Valid: true})
-	if err != nil{
 		slog.Error("failed to get team members", "error", err)
 		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
 		return
 	}
 
-	isMember := false
-	currentUser := pgtype.UUID{Bytes: userID, Valid: true}
-	for _, m := range members {
-		if m.ID == currentUser{
-			isMember = true
-			break
-		}
+	isMember, err := h.isTeamMember(r.Context(), pgtype.UUID{Bytes: teamID, Valid: true}, userID)
+	if err != nil {
+		slog.Error("failed to check membership", "error", err)
+		api.SendJSON(w, api.Response{Error: "something went wrong"}, http.StatusInternalServerError)
+		return
 	}
 
 	if !isMember {
@@ -269,7 +253,7 @@ func (h *Handler) GetTeamMembers (w http.ResponseWriter, r *http.Request){
 	}
 
 	for i := range members {
-    members[i].Password = ""
+		members[i].Password = ""
 	}
 
 	api.SendJSON(w, api.Response{Data: members}, http.StatusOK)

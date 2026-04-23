@@ -36,6 +36,13 @@ func NewHandler(repository *sqlc.Queries, jwtSecret string) http.Handler {
 		r.Post("/{id}/members", h.AddTeamMember)
 		r.Delete("/{id}/members", h.RemoveTeamMember)
 		r.Get("/{id}/members", h.GetTeamMembers)
+
+		r.Post("/{id}/tasks", h.CreateTask)
+		r.Get("/tasks", h.ListTasks)
+		r.Get("/{id}/tasks/{taskID}", h.GetTaskByID)
+		r.Patch("/{id}/tasks/{taskID}/status", h.UpdateTaskStatus)
+		r.Patch("/{id}/tasks/{taskID}/assign", h.AssignTask)
+		r.Delete("/{id}/tasks/{taskID}", h.RemoveTask)
 	})
 	
 	return r
